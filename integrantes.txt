@@ -1,0 +1,5 @@
+Integrantes: 
+- Enzo Borgo (RM572529),
+- João Araújo (RM571420) 
+- Yannick Parreira (RM 572443)
+Projeto desenvolvido como trabalho prático de sistemas embarcados.
