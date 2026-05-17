@@ -63,7 +63,10 @@ int  ldrMin   = 1023;
 int  ldrMax   = 0;
 bool calibrado = false;
 
-const uint8_t NUM_AMOSTRAS = 10;
+// FIX: reduzido de 10 para 3 amostras.
+// Com 10 amostras a media demorava ~10s para refletir mudancas bruscas
+// (ex: cobrir o LDR). Com 3 amostras reage em ~3s e ainda filtra ruido.
+const uint8_t NUM_AMOSTRAS = 3;
 float         amostrasTemp[NUM_AMOSTRAS];
 float         amostrasUmid[NUM_AMOSTRAS];
 uint8_t       amostrasLux[NUM_AMOSTRAS];
@@ -361,7 +364,7 @@ void lerRegistroN(int n, uint32_t &ts, int16_t &ti, int16_t &ui, uint8_t &lx) {
       EEPROM.get(addr,     t);
       EEPROM.get(addr + 4, a);
       EEPROM.get(addr + 6, b);
-      uint8_t c = EEPROM.read(addr + 8);  // 1 byte exato, evita desalinhamento
+      uint8_t c = EEPROM.read(addr + 8);
       ts = t; ti = a; ui = b; lx = c;
       return;
     }
@@ -413,7 +416,7 @@ void exibirLog() {
       if (pag == 0) {
         char ft[7], fu[5];
         dtostrf(tempExib, 4, 1, ft);
-        dtostrf(umid,     4, 0, fu);  // largura 4 para caber "100"
+        dtostrf(umid,     4, 0, fu);
         snprintf(linha, sizeof(linha), "T:%s%c U:%s%%", ft, unid, fu);
       } else {
         const char* lbl = (idioma == 1) ? "Light" : "Luz";
@@ -506,7 +509,7 @@ uint8_t lerLux() {
 }
 
 // =======================
-// MEDIAS 10s
+// MEDIAS 3s
 // =======================
 void atualizarMedias(float t, float u, uint8_t lux) {
   if (millis() - ultimaAmostra < 1000) return;
@@ -553,10 +556,10 @@ void printNivelUmid(float h) {
 }
 
 // =======================
-// LEDS — usa medias de 10s
-// Vermelho: critico em qualquer sensor
-// Amarelo:  apenas lux em alerta (22-41%)
+// LEDS
 // Verde:    tudo ideal
+// Amarelo:  apenas lux em alerta (22-41%) com temp/umid ideais
+// Vermelho: qualquer sensor critico
 // =======================
 void atualizarLEDs(uint8_t lux, float tempC, float umid) {
   bool vermelho = (lux > 41) ||
@@ -573,8 +576,9 @@ void atualizarLEDs(uint8_t lux, float tempC, float umid) {
 
 // =======================
 // BUZZER DE MONITORAMENTO
-// Alerta  (nivel 1): beep a cada 3s
-// Critico (nivel 2): beep a cada 1,5s
+// Nivel 0: silencio (verde)
+// Nivel 1: alerta   (amarelo) — beep 150ms a cada 3s
+// Nivel 2: critico  (vermelho) — beep 150ms a cada 1,5s
 // =======================
 void gerenciarBuzzer(uint8_t nivel) {
   if (nivel == 0) { pararBuzzer(); return; }
@@ -837,9 +841,7 @@ void menuPrincipal() {
 }
 
 // =======================
-// SERIAL — WEB MONITOR v3
-// Envia JSON a cada 1s durante monitoramento.
-// Aceita comando "LOG\n" para despejar EEPROM.
+// SERIAL — WEB MONITOR
 // =======================
 unsigned long ultimoEnvioSerial = 0;
 
@@ -847,7 +849,6 @@ void enviarDadosSerial(float tempC, float umid, uint8_t lux) {
   if (millis() - ultimoEnvioSerial < 1000) return;
   ultimoEnvioSerial = millis();
 
-  // Status geral
   bool critico = (lux > 41) ||
                  (tempC > TRIGGER_T_MAX) || (tempC < TRIGGER_T_MIN) ||
                  (umid  > TRIGGER_U_MAX) || (umid  < TRIGGER_U_MIN);
@@ -882,7 +883,6 @@ void verificarComandoSerial() {
     for (int i = 0; i < total; i++) {
       uint32_t ts; int16_t ti, ui; uint8_t lx;
       lerRegistroN(i, ts, ti, ui, lx);
-      DateTime dt(ts);
       Serial.print(F("{\"ts\":"));
       Serial.print(ts);
       Serial.print(F(",\"t\":"));
@@ -898,12 +898,11 @@ void verificarComandoSerial() {
   }
 }
 
-
-// LEDs, buzzer e display usam as medias de 10s.
-// Nos primeiros 10s (antes de mediaPronta), usa leitura instantanea
+// =======================
+// TELA MONITORANDO
+// LEDs, buzzer e display usam as medias de 3s.
+// Nos primeiros 3s (antes de mediaPronta), usa leitura instantanea
 // como fallback para nao exibir tela em branco.
-// Isso elimina oscilacoes na borda dos limites (ex: 60% alternando
-// entre seco/ideal a cada leitura).
 // =======================
 void telaMonitorando() {
   pararBuzzer();
@@ -927,7 +926,6 @@ void telaMonitorando() {
       animacaoFeita = false; pararBuzzer(); return;
     }
 
-    // Leitura instantanea alimenta o acumulador de medias
     float   tRaw   = dht.readTemperature();
     float   uRaw   = dht.readHumidity();
     uint8_t luxRaw = lerLux();
@@ -937,18 +935,17 @@ void telaMonitorando() {
 
     atualizarMedias(tRaw, uRaw, luxRaw);
 
-    // Valores usados em tudo: medias se prontas, senao fallback instantaneo
+    // LDR: leitura direta — reage imediatamente a mudancas de luz
+    // DHT22: usa media para evitar oscilacoes de temperatura/umidade
     float   t   = mediaPronta ? mediaTemp : tRaw;
     float   u   = mediaPronta ? mediaUmid : uRaw;
-    uint8_t lux = mediaPronta ? mediaLux  : luxRaw;
+    uint8_t lux = luxRaw;
 
     atualizarLEDs(lux, t, u);
 
-    // Envia dados pela serial (Web Monitor v3)
     enviarDadosSerial(t, u, lux);
     verificarComandoSerial();
 
-    // Log a cada minuto com medias
     DateTime dt = horaAtual();
     uint32_t tsAtual = dt.unixtime() / 60;
     if (tsAtual != lastLoggedTime && mediaPronta) {
@@ -959,16 +956,16 @@ void telaMonitorando() {
     float tExib = tempParaExibir(t);
     char  unid  = usarFahrenheit() ? 'F' : 'C';
 
-    // Nivel do buzzer consistente com os LEDs
-    uint8_t nivelBuzzer;
-    if ((lux > 41) ||
-        (t > TRIGGER_T_MAX) || (t < TRIGGER_T_MIN) ||
-        (u  > TRIGGER_U_MAX) || (u  < TRIGGER_U_MIN)) {
-      nivelBuzzer = 2;
-    } else if (lux > TRIGGER_LUX_MAX) {
-      nivelBuzzer = 1;
-    } else {
-      nivelBuzzer = 0;
+    uint8_t nivelBuzzer = 0;
+    if (mediaPronta) {
+      if (opcaoIndex == 0) {
+        if      (lux > 41)              nivelBuzzer = 2;
+        else if (lux > TRIGGER_LUX_MAX) nivelBuzzer = 1;
+      } else if (opcaoIndex == 1) {
+        if (t > TRIGGER_T_MAX || t < TRIGGER_T_MIN) nivelBuzzer = 2;
+      } else {
+        if (u > TRIGGER_U_MAX || u < TRIGGER_U_MIN) nivelBuzzer = 2;
+      }
     }
     gerenciarBuzzer(nivelBuzzer);
 
