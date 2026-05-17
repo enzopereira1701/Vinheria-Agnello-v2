@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor v3 — marcha.dev</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --surface: #111620;
+    --surface2: #1a2133;
+    --border: #1e2d45;
+    --accent: #00d4ff;
+    --accent2: #00ff9d;
+    --warn: #ffb300;
+    --danger: #ff3d5a;
+    --text: #e2eaf5;
+    --muted: #4a6080;
+    --ok: #00ff9d;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui: 'Space Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.04) 2px,
+      rgba(0,0,0,0.04) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  .conn-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .status-badge {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 4px 12px;
+    border-radius: 2px;
+    border: 1px solid;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .status-badge.disconnected { color: var(--muted); border-color: var(--muted); }
+  .status-badge.connected    { color: var(--ok);    border-color: var(--ok);    box-shadow: 0 0 8px rgba(0,255,157,0.2); }
+  .status-badge.error        { color: var(--danger);border-color: var(--danger);}
+
+  button {
+    font-family: var(--font-ui);
+    cursor: pointer;
+    border: none;
+    outline: none;
+    transition: all 0.15s;
+  }
+  .btn-connect {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 6px 18px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    border-radius: 2px;
+  }
+  .btn-connect:hover { background: rgba(0,212,255,0.1); box-shadow: 0 0 12px rgba(0,212,255,0.2); }
+  .btn-connect:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border-radius: 2px;
+  }
+  .btn-secondary:hover { color: var(--text); border-color: var(--muted); }
+
+  main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+
+  /* Not connected state */
+  #no-conn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 1.5rem;
+    text-align: center;
+  }
+  .big-icon {
+    width: 80px; height: 80px;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: var(--muted);
+    position: relative;
+  }
+  #no-conn h2 { font-size: 1.4rem; font-weight: 500; color: var(--text); }
+  #no-conn p  { font-size: 0.9rem; color: var(--muted); max-width: 380px; line-height: 1.6; }
+  .hint-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1rem 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: left;
+    max-width: 380px;
+    width: 100%;
+    line-height: 1.8;
+  }
+  .hint-box span { color: var(--accent); }
+  .no-support {
+    background: rgba(255,61,90,0.08);
+    border: 1px solid rgba(255,61,90,0.3);
+    color: var(--danger);
+    padding: 0.75rem 1.25rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  /* Dashboard grid */
+  #dashboard { display: none; }
+  #dashboard.visible { display: block; }
+
+  .cards-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 700px) { .cards-row { grid-template-columns: 1fr; } }
+
+  .sensor-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .sensor-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent, var(--border));
+    transition: background 0.3s;
+  }
+  .sensor-card.ok    { --card-accent: var(--ok);    border-color: rgba(0,255,157,0.15); }
+  .sensor-card.warn  { --card-accent: var(--warn);  border-color: rgba(255,179,0,0.2);  }
+  .sensor-card.crit  { --card-accent: var(--danger);border-color: rgba(255,61,90,0.25); }
+
+  .card-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-icon { font-size: 1rem; }
+  .card-value {
+    font-family: var(--font-mono);
+    font-size: 2.8rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+    transition: color 0.3s;
+  }
+  .card-value.ok   { color: var(--ok);    text-shadow: 0 0 20px rgba(0,255,157,0.3); }
+  .card-value.warn { color: var(--warn);  text-shadow: 0 0 20px rgba(255,179,0,0.3); }
+  .card-value.crit { color: var(--danger);text-shadow: 0 0 20px rgba(255,61,90,0.3); }
+
+  .card-unit { font-size: 1.2rem; font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .card-status {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+  .card-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 1rem;
+    overflow: hidden;
+  }
+  .card-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--muted);
+    transition: width 0.8s ease, background 0.3s;
+    width: 0%;
+  }
+
+  /* Status geral */
+  .status-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 600px) { .status-row { grid-template-columns: 1fr; } }
+
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .led-indicator {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .led-indicator.off    { background: var(--border); }
+  .led-indicator.green  { background: var(--ok);    box-shadow: 0 0 10px var(--ok); }
+  .led-indicator.yellow { background: var(--warn);  box-shadow: 0 0 10px var(--warn); }
+  .led-indicator.red    { background: var(--danger); box-shadow: 0 0 10px var(--danger); animation: blink 0.75s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  .status-info { flex: 1; }
+  .status-info strong { font-size: 0.85rem; font-weight: 500; display: block; margin-bottom: 2px; }
+  .status-info span   { font-size: 0.75rem; color: var(--muted); font-family: var(--font-mono); }
+  .uptime-val         { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 600; color: var(--accent); }
+
+  /* Gráfico */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .chart-title {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .chart-legend {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .legend-dot  { width: 8px; height: 8px; border-radius: 50%; }
+
+  canvas#chart { width: 100% !important; height: 200px !important; }
+
+  /* Alertas */
+  .alerts-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .alerts-title {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #alert-count {
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.65rem;
+    padding: 1px 7px;
+    border-radius: 10px;
+    display: none;
+  }
+  #alert-count.visible { display: inline; }
+  .alert-list { display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; }
+  .alert-item {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 8px 12px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideIn 0.2s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:none} }
+  .alert-item.warn { background: rgba(255,179,0,0.07); border-left: 3px solid var(--warn); color: var(--warn); }
+  .alert-item.crit { background: rgba(255,61,90,0.07);  border-left: 3px solid var(--danger); color: var(--danger); }
+  .alert-time { color: var(--muted); flex-shrink: 0; }
+  .empty-alerts { color: var(--muted); font-size: 0.8rem; font-family: var(--font-mono); }
+
+  /* Log EEPROM */
+  .log-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .log-title {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #log-table-wrap {
+    overflow-x: auto;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+  thead th {
+    color: var(--muted);
+    text-align: left;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody td {
+    padding: 7px 12px;
+    border-bottom: 1px solid rgba(30,45,69,0.5);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .td-ok   { color: var(--ok);    }
+  .td-warn { color: var(--warn);  }
+  .td-crit { color: var(--danger);}
+  #log-empty { color: var(--muted); font-size: 0.8rem; font-family: var(--font-mono); }
+
+  /* Raw serial */
+  .raw-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.25rem;
+  }
+  .raw-header {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+  }
+  #raw-out {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #4a8;
+    max-height: 100px;
+    overflow-y: auto;
+    line-height: 1.7;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    MONITOR <span style="color:var(--muted)">/ v3</span>
+  </div>
+  <div class="conn-bar">
+    <div class="status-badge disconnected" id="status-badge">DESCONECTADO</div>
+    <button class="btn-connect" id="btn-connect">Conectar Arduino</button>
+    <button class="btn-secondary" id="btn-disconnect" style="display:none">Desconectar</button>
+  </div>
+</header>
+
+<main>
+  <!-- Sem suporte -->
+  <div id="no-support" style="display:none">
+    <div class="no-support">
+      ⚠ Web Serial API não suportada. Use o Google Chrome (versão 89+) neste app.
+    </div>
+  </div>
+
+  <!-- Tela inicial -->
+  <div id="no-conn">
+    <div class="big-icon">📡</div>
+    <h2>Aguardando conexão</h2>
+    <p>Conecte o Arduino pela porta USB e clique em <strong>Conectar Arduino</strong>. O app lê os dados via Web Serial API.</p>
+    <div class="hint-box">
+      <span>// formato esperado (Serial.println)</span><br>
+      {"t":23.5,"u":65.2,"l":18,"st":"ok","ts":1700000000}<br><br>
+      <span>// comando para buscar log da EEPROM</span><br>
+      → envie <span>"LOG\n"</span> pela serial
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+
+    <div class="cards-row">
+      <div class="sensor-card" id="card-temp">
+        <div class="card-label"><span class="card-icon">🌡</span> Temperatura</div>
+        <div class="card-value" id="val-temp">--<span class="card-unit">°C</span></div>
+        <div class="card-status" id="st-temp">—</div>
+        <div class="card-bar"><div class="card-bar-fill" id="bar-temp"></div></div>
+      </div>
+      <div class="sensor-card" id="card-umid">
+        <div class="card-label"><span class="card-icon">💧</span> Umidade</div>
+        <div class="card-value" id="val-umid">--<span class="card-unit">%</span></div>
+        <div class="card-status" id="st-umid">—</div>
+        <div class="card-bar"><div class="card-bar-fill" id="bar-umid"></div></div>
+      </div>
+      <div class="sensor-card" id="card-lux">
+        <div class="card-label"><span class="card-icon">☀</span> Luminosidade</div>
+        <div class="card-value" id="val-lux">--<span class="card-unit">%</span></div>
+        <div class="card-status" id="st-lux">—</div>
+        <div class="card-bar"><div class="card-bar-fill" id="bar-lux"></div></div>
+      </div>
+    </div>
+
+    <div class="status-row">
+      <div class="status-card">
+        <div class="led-indicator off" id="led"></div>
+        <div class="status-info">
+          <strong id="led-label">Aguardando dados...</strong>
+          <span id="led-sub">Sem leitura ainda</span>
+        </div>
+      </div>
+      <div class="status-card">
+        <div class="status-info">
+          <strong>Última leitura</strong>
+          <span id="last-ts" style="color:var(--accent)">—</span>
+        </div>
+        <div class="uptime-val" id="uptime-val">—</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">histórico — últimas 60 leituras</div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#00d4ff"></div> Temp °C</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#00ff9d"></div> Umid %</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#ffb300"></div> Luz %</div>
+        </div>
+      </div>
+      <canvas id="chart"></canvas>
+    </div>
+
+    <div class="alerts-card">
+      <div class="alerts-title">
+        🔔 alertas em tempo real
+        <span id="alert-count">0</span>
+      </div>
+      <div class="alert-list" id="alert-list">
+        <div class="empty-alerts">Nenhum alerta — tudo dentro dos limites.</div>
+      </div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-header">
+        <div class="log-title">📋 log da EEPROM</div>
+        <button class="btn-secondary" id="btn-log">Buscar log do Arduino</button>
+      </div>
+      <div id="log-empty" style="color:var(--muted);font-family:var(--font-mono);font-size:0.8rem">
+        Clique em "Buscar log" para ler os registros salvos na EEPROM.
+      </div>
+      <div id="log-table-wrap" style="display:none">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Data / Hora</th><th>Temp (°C)</th><th>Umidade (%)</th><th>Luz (%)</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="raw-card">
+      <div class="raw-header">
+        <span>serial bruto</span>
+        <button class="btn-secondary" style="padding:2px 10px;font-size:0.7rem" onclick="document.getElementById('raw-out').textContent=''">limpar</button>
+      </div>
+      <div id="raw-out"></div>
+    </div>
+
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// =====================
+// WEB SERIAL
+// =====================
+let port, reader, writer;
+let buffer = '';
+let logBuffer = '';
+let readingLog = false;
+let connected = false;
+let connectedAt = null;
+
+const TRIGGERS = {
+  T_MIN: 10, T_MAX: 16,
+  U_MIN: 60, U_MAX: 80,
+  LUX_WARN: 21, LUX_CRIT: 41
+};
+
+// Histórico para gráfico
+const MAX_PTS = 60;
+const history = { t:[], u:[], l:[], labels:[] };
+
+// Alertas
+let alertCount = 0;
+
+// Chart.js
+let chart;
+
+function initChart() {
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label:'Temp °C', data:[], borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,0.05)', borderWidth:1.5, pointRadius:0, tension:0.4 },
+        { label:'Umid %',  data:[], borderColor:'#00ff9d', backgroundColor:'rgba(0,255,157,0.05)', borderWidth:1.5, pointRadius:0, tension:0.4 },
+        { label:'Luz %',   data:[], borderColor:'#ffb300', backgroundColor:'rgba(255,179,0,0.05)', borderWidth:1.5, pointRadius:0, tension:0.4 },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, animation:{ duration:300 },
+      plugins:{ legend:{ display:false }, tooltip:{ mode:'index', intersect:false,
+        backgroundColor:'#111620', titleColor:'#4a6080', bodyColor:'#e2eaf5', borderColor:'#1e2d45', borderWidth:1
+      }},
+      scales:{
+        x:{ display:false },
+        y:{ grid:{ color:'rgba(30,45,69,0.6)' }, ticks:{ color:'#4a6080', font:{family:'JetBrains Mono',size:10} }, border:{color:'#1e2d45'} }
+      }
+    }
+  });
+}
+
+// =====================
+// CONECTAR
+// =====================
+document.getElementById('btn-connect').addEventListener('click', async () => {
+  if (!('serial' in navigator)) {
+    document.getElementById('no-support').style.display='block';
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    connected = true;
+    connectedAt = Date.now();
+    setConnected(true);
+    startReading();
+    writer = port.writable.getWriter();
+    startUptimeTick();
+  } catch(e) {
+    if (e.name !== 'NotFoundError') setStatus('error','ERRO');
+  }
+});
+
+document.getElementById('btn-disconnect').addEventListener('click', async () => {
+  await disconnect();
+});
+
+async function disconnect() {
+  connected = false;
+  if (reader) { try { await reader.cancel(); } catch(_){} reader = null; }
+  if (writer) { try { writer.releaseLock(); } catch(_){} writer = null; }
+  if (port)   { try { await port.close();    } catch(_){} port = null; }
+  setConnected(false);
+}
+
+function setConnected(c) {
+  const badge = document.getElementById('status-badge');
+  const btnC  = document.getElementById('btn-connect');
+  const btnD  = document.getElementById('btn-disconnect');
+  const noConn = document.getElementById('no-conn');
+  const dash   = document.getElementById('dashboard');
+
+  badge.className = 'status-badge ' + (c ? 'connected' : 'disconnected');
+  badge.textContent = c ? 'CONECTADO' : 'DESCONECTADO';
+  btnC.style.display = c ? 'none' : '';
+  btnD.style.display = c ? '' : 'none';
+  noConn.style.display = c ? 'none' : 'flex';
+  dash.className = c ? 'visible' : '';
+
+  if (c && !chart) initChart();
+}
+
+function setStatus(cls, text) {
+  const badge = document.getElementById('status-badge');
+  badge.className = 'status-badge ' + cls;
+  badge.textContent = text;
+}
+
+// =====================
+// LEITURA SERIAL
+// =====================
+async function startReading() {
+  const textDecoder = new TextDecoderStream();
+  port.readable.pipeTo(textDecoder.writable);
+  const rdStream = textDecoder.readable;
+  reader = rdStream.getReader();
+
+  try {
+    while (connected) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) processChunk(value);
+    }
+  } catch(e) {
+    if (connected) setStatus('error','ERRO DE LEITURA');
+  }
+}
+
+function processChunk(chunk) {
+  buffer += chunk;
+  const lines = buffer.split('\n');
+  buffer = lines.pop();
+  lines.forEach(line => processLine(line.trim()));
+}
+
+function processLine(line) {
+  if (!line) return;
+
+  // Mostrar no raw
+  const raw = document.getElementById('raw-out');
+  raw.textContent += line + '\n';
+  if (raw.textContent.length > 4000) raw.textContent = raw.textContent.slice(-3000);
+  raw.scrollTop = raw.scrollHeight;
+
+  // Log EEPROM (JSON com "log_total")
+  if (line.includes('"log_total"') || readingLog) {
+    readingLog = true;
+    logBuffer += line;
+    if (line.startsWith(']}') || line === ']}') {
+      readingLog = false;
+      try { parseLog(JSON.parse(logBuffer)); } catch(e) { console.warn('log parse err',e); }
+      logBuffer = '';
+    }
+    return;
+  }
+
+  // Dados em tempo real
+  if (line.startsWith('{') && line.includes('"t":')) {
+    try {
+      const d = JSON.parse(line);
+      updateDashboard(d);
+    } catch(e) { /* linha incompleta */ }
+  }
+}
+
+// =====================
+// ATUALIZAR DASHBOARD
+// =====================
+function updateDashboard(d) {
+  const { t, u, l, st, ts } = d;
+
+  // Cartões
+  updateCard('temp', t, '°C', tempStatus(t), t, 0, 40);
+  updateCard('umid', u,  '%', umidStatus(u), u, 0, 100);
+  updateCard('lux',  l,  '%', luxStatus(l),  l, 0, 100);
+
+  // LED / status geral
+  updateLED(st);
+
+  // Timestamp
+  const dt = ts ? new Date(ts * 1000) : new Date();
+  document.getElementById('last-ts').textContent =
+    dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR');
+
+  // Histórico / gráfico
+  const label = dt.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  pushHistory(t, u, l, label);
+
+  // Alertas
+  checkAlerts(t, u, l, dt);
+}
+
+function updateCard(id, val, unit, status, pct, min, max) {
+  const card  = document.getElementById('card-' + id);
+  const valEl = document.getElementById('val-' + id);
+  const stEl  = document.getElementById('st-'  + id);
+  const bar   = document.getElementById('bar-' + id);
+
+  const cls = status.cls;
+  const pctN = Math.round(((val - min) / (max - min)) * 100);
+
+  card.className  = 'sensor-card ' + cls;
+  valEl.className = 'card-value ' + cls;
+  valEl.innerHTML = val.toFixed(1) + `<span class="card-unit">${unit}</span>`;
+  stEl.textContent = status.label;
+
+  bar.style.width = Math.min(100, Math.max(0, pctN)) + '%';
+  bar.style.background = cls === 'ok' ? 'var(--ok)' : cls === 'warn' ? 'var(--warn)' : 'var(--danger)';
+}
+
+function tempStatus(t) {
+  if (t < TRIGGERS.T_MIN) return { cls:'crit', label:`Ambiente frio (${t.toFixed(1)}°C) — fora do ideal` };
+  if (t > TRIGGERS.T_MAX) return { cls:'crit', label:`Ambiente quente (${t.toFixed(1)}°C) — fora do ideal` };
+  return { cls:'ok', label:`Dentro do ideal (${TRIGGERS.T_MIN}–${TRIGGERS.T_MAX}°C)` };
+}
+function umidStatus(u) {
+  if (u < TRIGGERS.U_MIN) return { cls:'crit', label:`Ambiente seco (${u.toFixed(0)}%) — fora do ideal` };
+  if (u > TRIGGERS.U_MAX) return { cls:'crit', label:`Ambiente úmido (${u.toFixed(0)}%) — fora do ideal` };
+  return { cls:'ok', label:`Dentro do ideal (${TRIGGERS.U_MIN}–${TRIGGERS.U_MAX}%)` };
+}
+function luxStatus(l) {
+  if (l > TRIGGERS.LUX_CRIT) return { cls:'crit', label:`Luz muito alta (${l}%) — problema` };
+  if (l > TRIGGERS.LUX_WARN) return { cls:'warn', label:`Luz elevada (${l}%) — atenção` };
+  return { cls:'ok', label:`Luminosidade normal (${l}%)` };
+}
+
+function updateLED(st) {
+  const led   = document.getElementById('led');
+  const label = document.getElementById('led-label');
+  const sub   = document.getElementById('led-sub');
+  if (st === 'critical') {
+    led.className = 'led-indicator red';
+    label.textContent = '⚠ Situação crítica';
+    sub.textContent = 'Verifique temperatura, umidade ou luminosidade';
+  } else if (st === 'warning') {
+    led.className = 'led-indicator yellow';
+    label.textContent = '⚡ Alerta de luminosidade';
+    sub.textContent = 'Luz acima do nível de atenção';
+  } else {
+    led.className = 'led-indicator green';
+    label.textContent = '✓ Tudo dentro do ideal';
+    sub.textContent = 'Todos os sensores OK';
+  }
+}
+
+// =====================
+// GRÁFICO
+// =====================
+function pushHistory(t, u, l, label) {
+  history.t.push(t); history.u.push(u); history.l.push(l); history.labels.push(label);
+  if (history.t.length > MAX_PTS) {
+    history.t.shift(); history.u.shift(); history.l.shift(); history.labels.shift();
+  }
+  if (chart) {
+    chart.data.labels = history.labels;
+    chart.data.datasets[0].data = history.t;
+    chart.data.datasets[1].data = history.u;
+    chart.data.datasets[2].data = history.l;
+    chart.update('none');
+  }
+}
+
+// =====================
+// ALERTAS
+// =====================
+const MAX_ALERTS = 30;
+const alertsEl = document.getElementById('alert-list');
+const alertCountEl = document.getElementById('alert-count');
+let lastSt = 'ok';
+
+function checkAlerts(t, u, l, dt) {
+  const st = (t < TRIGGERS.T_MIN || t > TRIGGERS.T_MAX ||
+              u < TRIGGERS.U_MIN || u > TRIGGERS.U_MAX ||
+              l > TRIGGERS.LUX_CRIT) ? 'critical' :
+             (l > TRIGGERS.LUX_WARN) ? 'warning' : 'ok';
+
+  if (st !== lastSt && st !== 'ok') {
+    addAlert(st, t, u, l, dt);
+  }
+  lastSt = st;
+}
+
+function addAlert(st, t, u, l, dt) {
+  const msgs = [];
+  if (t < TRIGGERS.T_MIN) msgs.push(`Temp baixa: ${t.toFixed(1)}°C`);
+  if (t > TRIGGERS.T_MAX) msgs.push(`Temp alta: ${t.toFixed(1)}°C`);
+  if (u < TRIGGERS.U_MIN) msgs.push(`Seco: ${u.toFixed(0)}%`);
+  if (u > TRIGGERS.U_MAX) msgs.push(`Úmido: ${u.toFixed(0)}%`);
+  if (l > TRIGGERS.LUX_CRIT) msgs.push(`Luz crítica: ${l}%`);
+  else if (l > TRIGGERS.LUX_WARN) msgs.push(`Luz alta: ${l}%`);
+
+  const isEmpty = alertsEl.querySelector('.empty-alerts');
+  if (isEmpty) isEmpty.remove();
+
+  const item = document.createElement('div');
+  item.className = 'alert-item ' + (st === 'critical' ? 'crit' : 'warn');
+  item.innerHTML = `<span class="alert-time">${dt.toLocaleTimeString('pt-BR')}</span> ${msgs.join(' · ')}`;
+  alertsEl.prepend(item);
+
+  while (alertsEl.children.length > MAX_ALERTS) alertsEl.lastChild.remove();
+
+  alertCount++;
+  alertCountEl.textContent = alertCount;
+  alertCountEl.className = 'visible';
+}
+
+// =====================
+// UPTIME
+// =====================
+function startUptimeTick() {
+  setInterval(() => {
+    if (!connected || !connectedAt) return;
+    const s = Math.floor((Date.now() - connectedAt) / 1000);
+    const h = String(Math.floor(s/3600)).padStart(2,'0');
+    const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    document.getElementById('uptime-val').textContent = `${h}:${m}:${ss}`;
+  }, 1000);
+}
+
+// =====================
+// LOG EEPROM
+// =====================
+document.getElementById('btn-log').addEventListener('click', async () => {
+  if (!writer) return;
+  logBuffer = '';
+  readingLog = false;
+  const enc = new TextEncoder();
+  await writer.write(enc.encode('LOG\n'));
+  document.getElementById('log-empty').textContent = 'Aguardando resposta do Arduino...';
+});
+
+function parseLog(data) {
+  const records = data.records;
+  if (!records || records.length === 0) {
+    document.getElementById('log-empty').textContent = 'Nenhum registro encontrado na EEPROM.';
+    document.getElementById('log-table-wrap').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('log-empty').style.display = 'none';
+  document.getElementById('log-table-wrap').style.display = 'block';
+
+  const tbody = document.getElementById('log-tbody');
+  tbody.innerHTML = '';
+
+  records.forEach((r, i) => {
+    const dt = new Date(r.ts * 1000);
+    const dateStr = dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR');
+    const tSt = r.t < TRIGGERS.T_MIN || r.t > TRIGGERS.T_MAX ? 'crit' : 'ok';
+    const uSt = r.u < TRIGGERS.U_MIN || r.u > TRIGGERS.U_MAX ? 'crit' : 'ok';
+    const lSt = r.l > TRIGGERS.LUX_CRIT ? 'crit' : r.l > TRIGGERS.LUX_WARN ? 'warn' : 'ok';
+    const gSt = (tSt==='crit'||uSt==='crit'||lSt==='crit') ? 'crit' : lSt==='warn' ? 'warn' : 'ok';
+    const badge = gSt === 'crit' ? '⚠ crítico' : gSt === 'warn' ? '⚡ alerta' : '✓ ok';
+    const badgeClass = 'td-' + gSt;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:var(--muted)">${i+1}</td>
+      <td>${dateStr}</td>
+      <td class="td-${tSt}">${r.t.toFixed(1)}</td>
+      <td class="td-${uSt}">${r.u.toFixed(0)}</td>
+      <td class="td-${lSt}">${r.l}</td>
+      <td class="${badgeClass}">${badge}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// Checar suporte
+if (!('serial' in navigator)) {
+  document.getElementById('no-support').style.display = 'block';
+  document.getElementById('btn-connect').disabled = true;
+}
+</script>
+</body>
+</html>
