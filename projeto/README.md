@@ -180,4 +180,5 @@ RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
 ## Autores
 - Enzo Borgo (RM572529),
 - João Araújo (RM571420) 
-- Yannick Parreira (RM 572443)
+- Yannick Parreira (RM572443)
+- Alyson Gabriel Aquino Souto (RM574125)
